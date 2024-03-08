@@ -1,0 +1,7 @@
+CompileFlags:
+  Add: [
+    -Wall,
+    -ferror-limit=0,
+    -std=c++20,
+  ]
+
