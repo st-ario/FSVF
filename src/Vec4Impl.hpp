@@ -1,5 +1,6 @@
 #pragma once
 
+#include "FloatUtils.hpp"
 #include "GenericMethods.hpp"
 #include "LVec3.hpp"
 
@@ -18,8 +19,7 @@ FSVF_FORCEINLINE Vec4::Vec4(LVec3 v, float w)
 
 FSVF_FORCEINLINE Vec4 Vec4::all_bits_ones()
 {
-  const auto v = Vec4{ _mm_undefined_ps() };
-  return BitMasks::cmp_equal_bitwise(v, v);
+  return Vec4{ bits_to_float(0xFFFF'FFFF) };
 }
 
 }

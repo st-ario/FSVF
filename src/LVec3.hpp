@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstring>
+#include <utility>
 
 namespace FSVF
 {
@@ -12,10 +13,10 @@ using stdVec3 = std::array<float, 3>;
 
 /* ########################################## LVec3 ############################################# */
 
-/* restricted component-wise access, see Vec4's documentation
+/* "Large" Vec3, 4 packed 32-bit floats, the last component is guaranteed to evaluate == 0.0f
+ * (i.e. a signed zero), and access to it is hidden from the user.
  *
- * "Large" Vec3, 4 packed 32-bit floats, the last component is guaranteed to be == 0.0f, and access
- * to it is hidden from the user
+ * See Vec4's documentation for more information.
  */
 class alignas(__m128) LVec3
 {
@@ -30,10 +31,8 @@ public:
 
   // constructs a LVec3 with the same value in all components
   explicit LVec3(float x)
-    : m_sse{ _mm_set_ps1(x) }
-  {
-    m_sse = precondition(m_sse);
-  }
+    : m_sse{ _mm_set_ps(0.0f, x, x, x) }
+  {}
 
   // constructs a LVec3 with the specified components;
   // prefer using another constructor if the data is already available in a contiguous buffer
@@ -89,17 +88,10 @@ public:
     return LVec3(sse);
   }
 
-  // TODO make private again after fixing tests
-  //private:
   union {
     __m128 m_sse;
-
-    struct
-    {
-      float x;
-      float y;
-      float z;
-      float NOPE;
+    struct {
+      float x, y, z, w;
     };
   };
 

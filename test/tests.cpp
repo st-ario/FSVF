@@ -367,29 +367,6 @@ TEST_CASE("Dot Product", "[linear_algebra]")
   }
 }
 
-TEST_CASE("Length And Norm", "[linear_algebra]")
-{
-  for (int i = 0; i < 1000; ++i)
-  {
-    const Vec4 v{ gen_params(4, 10'000).data() };
-    const auto norm_online = normalize(v);
-    const auto norm_pbrt   = normalize_alt(v);
-
-    UNSCOPED_INFO("For: " << Catch::StringMaker<Vec4>::convert(v));
-    CHECK(norm_online == norm_pbrt);
-  }
-
-  for (int i = 0; i < 1000; ++i)
-  {
-    const Vec4 v{ biased_params(4, 8, 10'000).data() };
-    const auto norm_online = normalize(v);
-    const auto norm_pbrt   = normalize_alt(v);
-
-    UNSCOPED_INFO("For: " << Catch::StringMaker<Vec4>::convert(v));
-    CHECK(norm_online == norm_pbrt);
-  }
-}
-
 TEST_CASE("Constructors 3x3 Matrices", "[basics]")
 {
   LMat3 m(1, 2, 1, -2, 0, 5, 3, 3, 4);

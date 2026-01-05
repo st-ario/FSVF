@@ -1,6 +1,7 @@
 #pragma once
 
 #include "FloatUtils.hpp"
+#include "GenericMethods.hpp"
 #include "Operators.hpp"
 #include "VecInternals.hpp"
 
@@ -34,7 +35,7 @@ FSVF_FORCEINLINE auto FSVF_VECCALL operator^(T1 v, T2 w)
 }
 
 template<FastVector T>
-T FSVF_VECCALL operator~(T v)
+FSVF_FORCEINLINE T FSVF_VECCALL operator~(T v)
 {
   if constexpr (std::is_base_of_v<LVec3, T>)
   {
@@ -55,7 +56,7 @@ T FSVF_VECCALL operator~(T v)
 
 template<FastVector T1, FastVector T2>
   requires(SameDimension<T1, T2>)
-T1& FSVF_VECCALL operator&=(T1& v, T2 w)
+FSVF_FORCEINLINE T1& FSVF_VECCALL operator&=(T1& v, T2 w)
 {
   v = v & w;
   return v;
@@ -63,7 +64,7 @@ T1& FSVF_VECCALL operator&=(T1& v, T2 w)
 
 template<FastVector T1, FastVector T2>
   requires(SameDimension<T1, T2>)
-T1& FSVF_VECCALL operator|=(T1& v, T2 w)
+FSVF_FORCEINLINE T1& FSVF_VECCALL operator|=(T1& v, T2 w)
 {
   v = v | w;
   return v;
@@ -71,7 +72,7 @@ T1& FSVF_VECCALL operator|=(T1& v, T2 w)
 
 template<FastVector T1, FastVector T2>
   requires(SameDimension<T1, T2>)
-T1& FSVF_VECCALL operator^=(T1& v, T2 w)
+FSVF_FORCEINLINE T1& FSVF_VECCALL operator^=(T1& v, T2 w)
 {
   v = v ^ w;
   return v;
@@ -121,22 +122,28 @@ FSVF_FORCEINLINE auto FSVF_VECCALL operator-(T1 v, T2 w)
 
 // TODO document on declaration
 template<FastVector T1, FastVector T2>
-FSVF_FORCEINLINE auto FSVF_VECCALL operator/(T1 v, T2 w)
-  -> LargestDimensionType<T1, T2>
+FSVF_FORCEINLINE auto FSVF_VECCALL operator/(T1 v, T2 x) -> decltype(v * Vec4{1.f})
 {
-  if constexpr (std::derived_from<T2, LVec3>)
+    Vec4 divisor = x;
+    if constexpr (std::derived_from<T2, LVec3>)
     {
         static_assert(SameDimension<T1, T2>, "Invalid use of operator/(): can't divide a 4D vector by a 3D vector");
+        // avoid dividing by zero
+        divisor |= Vec4{0.f, 0.f, 0.f, 1.f};
     }
 
-  using Res = LargestDimensionType<T1, T2>;
-
-  // if both are 3D vectors -> set the last component to 0
-  // if only the divisor is a 3D vector -> the last component will be an infinite with the same sign of the dividend
-#if defined(FSVF_RCPPS)
-  return Res{ v * Vec4{ _mm_rcp_ps(m_sse(w)) } };
-#else
+#if defined(FSVF_NO_RECIPROCAL_MATH)
   return Res{ Vec4{ _mm_div_ps(m_sse(v), m_sse(w)) } };
+#else
+  Vec4 rcp = _mm_rcp_ps(divisor);
+  // TODO statically configurable number of Newton-Raphson steps
+  const auto nr = fnmadd(divisor, rcp, Vec4{2.f});
+  const Vec4 mul = nr * rcp;
+  // strip NaNs
+  // TODO stripping NaNs should depend on a preprocessor flag
+  const Vec4 mask = _mm_cmpord_ps(nr, Vec4{0.f});
+  rcp = _mm_blendv_ps(rcp, mul, mask);
+  return v * rcp;
 #endif
 }
 
@@ -175,7 +182,7 @@ FSVF_FORCEINLINE T FSVF_VECCALL operator/(T v, float x)
 }
 
 template<FastVector T1, FastVector T2>
-T1& FSVF_VECCALL operator-=(T1& v, T2 w)
+FSVF_FORCEINLINE T1& FSVF_VECCALL operator-=(T1& v, T2 w)
 {
   if constexpr (std::derived_from<T1, LVec3>)
     {
@@ -186,7 +193,7 @@ T1& FSVF_VECCALL operator-=(T1& v, T2 w)
 }
 
 template<FastVector T1, FastVector T2>
-T1& FSVF_VECCALL operator+=(T1& v, T2 w)
+FSVF_FORCEINLINE T1& FSVF_VECCALL operator+=(T1& v, T2 w)
 {
   if constexpr (std::derived_from<T1, LVec3>)
     {
@@ -197,7 +204,7 @@ T1& FSVF_VECCALL operator+=(T1& v, T2 w)
 }
 
 template<FastVector T1, FastVector T2>
-T1& FSVF_VECCALL operator/=(T1& v, T2 w)
+FSVF_FORCEINLINE T1& FSVF_VECCALL operator/=(T1& v, T2 w)
 {
   if constexpr (std::derived_from<T2, LVec3>)
     {
@@ -208,46 +215,50 @@ T1& FSVF_VECCALL operator/=(T1& v, T2 w)
 }    // TODO document on declaration
 
 template<FastVector T1, FastVector T2>
-T1& FSVF_VECCALL operator*=(T1& v, T2 w)
+FSVF_FORCEINLINE T1& FSVF_VECCALL operator*=(T1& v, T2 w)
 {
   v = v * w;
   return v;
 }
 
 template<FastVector T>
-T& FSVF_VECCALL operator/=(T& v, float x)
+FSVF_FORCEINLINE T& FSVF_VECCALL operator/=(T& v, float x)
 {
   v = v / x;
   return v;
 }    // TODO specialize to avoid dividing by 0 in LVec3s
 
 template<FastVector T>
-T& FSVF_VECCALL operator*=(T& v, float x)
+FSVF_FORCEINLINE T& FSVF_VECCALL operator*=(T& v, float x)
 {
   v = v * x;
   return v;
 }
 
-template<FastVector T>
-Vec4 FSVF_VECCALL operator<=(T v, T w)
+template<FastVector T1, FastVector T2>
+requires(SameDimension<T1, T2>)
+FSVF_FORCEINLINE Vec4 FSVF_VECCALL operator<=(T1 v, T2 w)
 {
   return _mm_cmple_ps(m_sse(v), m_sse(w));
 }
 
-template<FastVector T>
-Vec4 FSVF_VECCALL operator>=(T v, T w)
+template<FastVector T1, FastVector T2>
+requires(SameDimension<T1, T2>)
+FSVF_FORCEINLINE Vec4 FSVF_VECCALL operator>=(T1 v, T2 w)
 {
   return _mm_cmpge_ps(m_sse(v), m_sse(w));
 }
 
-template<FastVector T>
-Vec4 FSVF_VECCALL operator<(T v, T w)
+template<FastVector T1, FastVector T2>
+requires(SameDimension<T1, T2>)
+FSVF_FORCEINLINE Vec4 FSVF_VECCALL operator<(T1 v, T2 w)
 {
   return _mm_cmplt_ps(m_sse(v), m_sse(w));
 }
 
-template<FastVector T>
-Vec4 FSVF_VECCALL operator>(T v, T w)
+template<FastVector T1, FastVector T2>
+requires(SameDimension<T1, T2>)
+FSVF_FORCEINLINE Vec4 FSVF_VECCALL operator>(T1 v, T2 w)
 {
   return _mm_cmpgt_ps(m_sse(v), m_sse(w));
 }

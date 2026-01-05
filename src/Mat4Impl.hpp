@@ -135,6 +135,16 @@ FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::scale_by_inv(float x) const
   return scale_by_inv(Vec4{ x });
 }
 
+FSVF_FORCEINLINE Mat4 FSVF_VECCALL operator*(Mat4 m, float x)
+{
+  return m.scale_by(x);
+}
+
+FSVF_FORCEINLINE Mat4 FSVF_VECCALL operator*(float x, Mat4 m)
+{
+  return m.scale_by(x);
+}
+
 FSVF_FORCEINLINE Mat4 FSVF_VECCALL operator/(Mat4 m, float x)
 {
   return m.scale_by_inv(x);
@@ -146,7 +156,6 @@ FSVF_FORCEINLINE Mat4 FSVF_VECCALL operator/(float x, Mat4 m)
   return Mat4{ v / m.cols[0], v / m.cols[1], v / m.cols[2], v / m.cols[3] };
 }
 
-// TODO LVec3 ?
 template<typename T>
   requires FastVector<T> && (!std::derived_from<T, LVec3>)
 FSVF_FORCEINLINE T FSVF_VECCALL Mat4::operator*(T v) const
@@ -221,48 +230,52 @@ FSVF_FORCEINLINE Mat4 FSVF_VECCALL operator*(const Mat4 m, const Mat4 n)
   const Vec4 n0z = shuffle<Shuf4::zzzz>(n.cols[0]);
   const Vec4 n0w = shuffle<Shuf4::wwww>(n.cols[0]);
 
-  const Vec4 c00 = m.cols[0] * n0x;
   const Vec4 c01 = m.cols[1] * n0y;
-  const Vec4 c02 = m.cols[2] * n0z;
   const Vec4 c03 = m.cols[3] * n0w;
 
-  const Vec4 res0 = (c00 + c01) + (c02 + c03);
+  const Vec4 fm00 = fmadd(m.cols[0], n0x, c01);
+  const Vec4 fm01 = fmadd(m.cols[2], n0z, c03);
+
+  const Vec4 res0 = fm00 + fm01;
 
   const Vec4 n1x = shuffle<Shuf4::xxxx>(n.cols[1]);
   const Vec4 n1y = shuffle<Shuf4::yyyy>(n.cols[1]);
   const Vec4 n1z = shuffle<Shuf4::zzzz>(n.cols[1]);
   const Vec4 n1w = shuffle<Shuf4::wwww>(n.cols[1]);
 
-  const Vec4 c10 = m.cols[0] * n1x;
   const Vec4 c11 = m.cols[1] * n1y;
-  const Vec4 c12 = m.cols[2] * n1z;
   const Vec4 c13 = m.cols[3] * n1w;
 
-  const Vec4 res1 = (c10 + c11) + (c12 + c13);
+  const Vec4 fm10 = fmadd(m.cols[0], n1x, c11);
+  const Vec4 fm11 = fmadd(m.cols[2], n1z, c13);
+
+  const Vec4 res1 = fm10 + fm11;
 
   const Vec4 n2x = shuffle<Shuf4::xxxx>(n.cols[2]);
   const Vec4 n2y = shuffle<Shuf4::yyyy>(n.cols[2]);
   const Vec4 n2z = shuffle<Shuf4::zzzz>(n.cols[2]);
   const Vec4 n2w = shuffle<Shuf4::wwww>(n.cols[2]);
 
-  const Vec4 c20 = m.cols[0] * n2x;
   const Vec4 c21 = m.cols[1] * n2y;
-  const Vec4 c22 = m.cols[2] * n2z;
   const Vec4 c23 = m.cols[3] * n2w;
 
-  const Vec4 res2 = (c20 + c21) + (c22 + c23);
+  const Vec4 fm20 = fmadd(m.cols[0], n2x, c21);
+  const Vec4 fm21 = fmadd(m.cols[2], n2z, c23);
+
+  const Vec4 res2 = fm20 + fm21;
 
   const Vec4 n3x = shuffle<Shuf4::xxxx>(n.cols[3]);
   const Vec4 n3y = shuffle<Shuf4::yyyy>(n.cols[3]);
   const Vec4 n3z = shuffle<Shuf4::zzzz>(n.cols[3]);
   const Vec4 n3w = shuffle<Shuf4::wwww>(n.cols[3]);
 
-  const Vec4 c30 = m.cols[0] * n3x;
   const Vec4 c31 = m.cols[1] * n3y;
-  const Vec4 c32 = m.cols[2] * n3z;
   const Vec4 c33 = m.cols[3] * n3w;
 
-  const Vec4 res3 = (c30 + c31) + (c32 + c33);
+  const Vec4 fm30 = fmadd(m.cols[0], n3x, c31);
+  const Vec4 fm31 = fmadd(m.cols[2], n3z, c33);
+
+  const Vec4 res3 = fm30 + fm31;
 
   return Mat4(res0, res1, res2, res3);
 }
@@ -280,6 +293,7 @@ FSVF_FORCEINLINE float FSVF_VECCALL Mat4::determinant() const
   const Vec4 m23 = v3p0 * cols[2];                 /* ni mj pk ol */
   const Vec4 m12 = v2p0 * cols[1];                 /* ej fi gl hk */
 
+#if 0
   const Vec4 u01 = shuffle<Shuf4::yyxx>(m01);      /* af af be be */
   const Vec4 u02 = shuffle<Shuf4::yyxx>(m02);      /* aj aj bi bi */
   const Vec4 u03 = shuffle<Shuf4::yyxx>(m03);      /* an an bm bm */
@@ -304,11 +318,7 @@ FSVF_FORCEINLINE float FSVF_VECCALL Mat4::determinant() const
   const Vec4 p1302 = u13 * d02; /* dkfm clfm dken clen */
   const Vec4 p2301 = u23 * d01; /* dgjm chjm dgin chin */
 
-  const __m128i vb     = float_to_bits(_mm_setzero_ps());
-  const __m128i ones_i = _mm_cmpeq_epi32(vb, vb);
-  const Vec4    ones   = bits_to_float(_mm_slli_epi32(ones_i, 31));
-  const Vec4    zeroes = _mm_setzero_ps();
-  const Vec4    mask   = blend_with_mask<0b0110>(zeroes, ones);
+  const Vec4 mask = Vec4{ 0.f, -0.f, -0.f, 0.f };
 
   const Vec4 s0123 = mask ^ p0123;
   const Vec4 s0312 = mask ^ p0312;
@@ -320,41 +330,91 @@ FSVF_FORCEINLINE float FSVF_VECCALL Mat4::determinant() const
   const Vec4 acc = (s0123 + s0312) + (s1203 + s2301) - (s0213 + s1302);
 
   return sum(acc);
+#else
+                                              /*  -  -  -  - */
+  const Vec4 bl0 = _mm_unpacklo_ps(m01, m12); /* be ej af fi */
+  const Vec4 bh0 = _mm_unpackhi_ps(m23, m03); /* kp do lo cp */
+
+                                              /*  +  -  +  - */
+  const Vec4 bl1 = _mm_unpacklo_ps(m02, m23); /* bi in aj jm */
+  const Vec4 bh1 = _mm_unpackhi_ps(m13, m01); /* gp dg ho ch */
+
+                                              /*  -  +  -  + */
+  const Vec4 bl2 = _mm_unpacklo_ps(m03, m13); /* bm en an fm */
+  const Vec4 bh2 = _mm_unpackhi_ps(m12, m02); /* gl dk hk cl */
+
+                                               /*  +  +  +  + */
+  //                                     (bl0) /* be ej af fi */
+  const Vec4 bh0s = shuffle<Shuf4::zwxy>(bh0); /* lo cp kp do */
+
+                                               /*  -  +  -  + */
+  //                                     (bl1) /* bi in aj jm */
+  const Vec4 bh1s = shuffle<Shuf4::zwxy>(bh1); /* ho ch gp dg */
+
+                                               /*  +  -  +  - */
+  //                                     (bh2) /* gl dk hk cl */
+  const Vec4 bl2s = shuffle<Shuf4::zwxy>(bl2); /* an fm bm en */
+
+  const Vec4 m0 = bl1 * bh1;
+  const Vec4 fm0 = fmaddsub(bl0, bh0s, m0);
+  // belo + bigp, cpej - dgin, afkp + ajho, dofi - chjm
+  // (correct signs)
+
+  const Vec4 m1 = bl2 * bh2;
+  const Vec4 nfm1 = fmaddsub(bl0, bh0, m1);
+  // bekp + bmgl, doej - dken, aflo + anhk, cpfi - clfm
+  // (inverse signs)
+
+  const float res0 = sum(fm0 - nfm1);
+
+  const Vec4 m2 = bl1 * bh1s;
+  const Vec4 sfm2 = fmsub(bh2, bl2s, m2);
+  // angl - biho, dkfm - chin, bmhk - ajgp, clen - dgjm
+  // (0,2: correct signs & 1,3: inverse signs)
+
+  const Vec4 shuf = shuffle<Shuf4::yyww>(sfm2);
+  const float res1 = sum(sfm2 - shuf);
+  // angl - biho - dkfm + chin
+  // 0
+  // bmhk - ajgp - clen + dgjm
+  // 0
+
+  return res0 + res1;
+#endif
 }
 
 FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::adj_transposed() const
 {
-  /*
-    a00 a01 a02 a03
-    a10 a11 a12 a13
-    a20 a21 a22 a23
-    a30 a31 a32 a33
-    */
+  /* a e i m
+     b f j n
+     c g k o
+     d h l p */
 
-  const Vec4 v0p0 = shuffle<Shuf4::yxwz>(cols[0]); /* a10 a00 a30 a20 */
-  const Vec4 v2p0 = shuffle<Shuf4::yxwz>(cols[2]); /* a12 a02 a32 a22 */
-  const Vec4 v3p0 = shuffle<Shuf4::yxwz>(cols[3]); /* a13 a03 a33 a23 */
+  const Vec4 v0p0 = shuffle<Shuf4::yxwz>(cols[0]); /* b a d c */
+  const Vec4 v1p0 = shuffle<Shuf4::yxwz>(cols[1]); /* f e h g */
+  const Vec4 v2p0 = shuffle<Shuf4::yxwz>(cols[2]); /* j i l k */
+  const Vec4 v3p0 = shuffle<Shuf4::yxwz>(cols[3]); /* n m p o */
 
-  const Vec4 m01 = v0p0 * cols[1];           /* a10a01 a00a11 a30a21 a20a31 */
-  const Vec4 m02 = v0p0 * cols[2];           /* a10a02 a00a12 a30a22 a20a32 */
-  const Vec4 m03 = v0p0 * cols[3];           /* a10a03 a00a13 a30a23 a20a33 */
-  const Vec4 m12 = v2p0 * cols[1];           /* a12a01 a02a11 a32a21 a22a31 */
-  const Vec4 m13 = v3p0 * cols[1];           /* a13a01 a03a11 a33a21 a23a31 */
-  const Vec4 m23 = v3p0 * cols[2];           /* a13a02 a03a12 a33a22 a23a32 */
+  const Vec4 m01 = v0p0 * cols[1];                 /* be af dg ch */
+  const Vec4 m02 = v0p0 * cols[2];                 /* bi aj dk cl */
+  const Vec4 m03 = v0p0 * cols[3];                 /* bm an do cp */
+  const Vec4 m12 = v2p0 * cols[1];                 /* ej fi gl hk */
+  const Vec4 m13 = v3p0 * cols[1];                 /* en fm gp ho */
+  const Vec4 m23 = v3p0 * cols[2];                 /* in jm kp lo */
 
-  const Vec4 p0 = shuffle<Shuf4::yxwz>(m01); /* a00a11 a10a01 a20a31 a30a21 */
-  const Vec4 p1 = shuffle<Shuf4::yxwz>(m02); /* a00a12 a10a02 a20a32 a30a22 */
-  const Vec4 p2 = shuffle<Shuf4::yxwz>(m03); /* a00a13 a10a03 a20a33 a30a23 */
-  const Vec4 p3 = shuffle<Shuf4::yxwz>(m12); /* a02a11 a12a01 a22a31 a32a21 */
-  const Vec4 p4 = shuffle<Shuf4::yxwz>(m13); /* a03a11 a13a01 a23a31 a33a21 */
-  const Vec4 p5 = shuffle<Shuf4::yxwz>(m23); /* a03a12 a13a02 a23a32 a33a22 */
+  const Vec4 p0 = shuffle<Shuf4::yxwz>(m01);       /* af be ch dg */
+  const Vec4 p1 = shuffle<Shuf4::yxwz>(m02);       /* aj bi cl dk */
+  const Vec4 p2 = shuffle<Shuf4::yxwz>(m03);       /* an bm cp do */
+  const Vec4 p3 = shuffle<Shuf4::yxwz>(m12);       /* fi ej hk gl */
+  const Vec4 p4 = shuffle<Shuf4::yxwz>(m13);       /* fm en ho gp */
+  const Vec4 p5 = shuffle<Shuf4::yxwz>(m23);       /* jm in lo kp */
 
-  /* a00a11-a10a01 a10a01-a00a11 a20a31-a30a21 a30a21-a20a31 */
-  /* a00a12-a10a02 a10a02-a00a12 a20a32-a30a22 a30a22-a20a32 */
-  /* a00a13-a10a03 a10a03-a00a13 a20a33-a30a23 a30a23-a20a33 */
-  /* a12a01-a02a11 a02a11-a12a01 a32a21-a22a31 a22a31-a32a21 */
-  /* a13a01-a03a11 a03a11-a13a01 a33a21-a23a31 a23a31-a33a21 */
-  /* a13a02-a03a12 a03a12-a13a02 a33a22-a23a32 a23a32-a33a22 */
+  /* af-be be-af ch-dg dg-ch */
+  /* aj-bi bi-aj cl-dk dk-cl */
+  /* an-bm bm-an cp-do do-cp */
+  /* ej-fi fi-ej gl-hk hk-gl */
+  /* en-fm fm-en gp-ho ho-gp */
+  /* in-jm jm-in kp-lo lo-kp */
 
   const Vec4 d0 = p0 - m01;    // s0 -s0 c0 -c0
   const Vec4 d1 = p1 - m02;    // s1 -s1 c1 -c1
@@ -364,112 +424,29 @@ FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::adj_transposed() const
   const Vec4 d5 = m23 - p5;    // s5 -s5 c5 -c5
 
   // convenience aliases to keep the code block below within 80 columns
-  auto& c   = cols;
   using CV4 = const Vec4;
 
-  CV4 f0 = d5 * shuffle<Shuf4::wzyx>(c[1]);    // a31*s5 -a21*s5 a11*c5 -a01*c5
-  CV4 f1 = d5 * shuffle<Shuf4::zwxy>(c[0]);    // a20*s5 -a30*s5 a00*c5 -a10*c5
-  CV4 f2 = d4 * shuffle<Shuf4::wzyx>(c[0]);    // a30*s4 -a20*s4 a10*c4 -a00*c4
-  CV4 f3 = d4 * shuffle<Shuf4::zwxy>(c[2]);    // a22*s4 -a32*s4 a02*c4 -a12*c4
-  CV4 f4 = d3 * shuffle<Shuf4::wzyx>(c[3]);    // a33*s3 -a23*s3 a13*c3 -a03*c3
-  CV4 f5 = d3 * shuffle<Shuf4::zwxy>(c[0]);    // a20*s3 -a30*s3 a00*c3 -a10*c3
-  CV4 f6 = d2 * shuffle<Shuf4::wzyx>(c[2]);    // a32*s2 -a22*s2 a12*c2 -a02*c2
-  CV4 f7 = d2 * shuffle<Shuf4::zwxy>(c[1]);    // a21*s2 -a31*s2 a01*c2 -a11*c2
-  CV4 f8 = d1 * shuffle<Shuf4::wzyx>(c[1]);    // a31*s1 -a21*s1 a11*c1 -a01*c1
-  CV4 f9 = d1 * shuffle<Shuf4::zwxy>(c[3]);    // a23*s1 -a33*s1 a03*c1 -a13*c1
-  CV4 fA = d0 * shuffle<Shuf4::wzyx>(c[3]);    // a33*s0 -a23*s0 a13*c0 -a03*c0
-  CV4 fB = d0 * shuffle<Shuf4::zwxy>(c[2]);    // a22*s0 -a32*s0 a02*c0 -a12*c0
+  CV4 sf0 = shuffle<Shuf4::zwxy>(d5) * v1p0;
+  CV4 sf2 = shuffle<Shuf4::zwxy>(d4) * v0p0;
+  CV4 sf9 = shuffle<Shuf4::wzyx>(d1) * v3p0;
+  CV4 sfB = shuffle<Shuf4::wzyx>(d0) * v2p0;
 
-  // we're working on the transposed adjoint
+  CV4 sf04 = fmadd(shuffle<Shuf4::zwxy>(d3), v3p0, sf0);
+  CV4 sf27 = fmadd(shuffle<Shuf4::wzyx>(d2), v1p0, sf2);
+  CV4 sf96 = fmadd(shuffle<Shuf4::zwxy>(d2), v2p0, sf9);
+  CV4 sfB5 = fmadd(shuffle<Shuf4::wzyx>(d3), v0p0, sfB);
 
-  // x = f0.z + f3.w + f4.z
-  // y = f0.w + f3.z + f4.w
-  // z = f0.x + f3.y + f4.x
-  // w = f0.y + f3.x + f4.y
+  CV4 row0 = fmadd(shuffle<Shuf4::wzyx>(d4), v2p0, sf04);
+  CV4 row1 = fmadd(shuffle<Shuf4::wzyx>(d5), v0p0, sf96);
+  CV4 row2 = fmadd(shuffle<Shuf4::zwxy>(d0), v3p0, sf27);
+  CV4 row3 = fmadd(shuffle<Shuf4::zwxy>(d1), v1p0, sfB5);
 
-  // row 1: f0.zwxy + f3.wzyx + f4.zwxy
-  // row 2: f1.wzyx + f6.zwxy + f9.wzyx
-  // row 3: f2.zwxy + f7.wzyx + fA.zwxy
-  // row 4: f5.wzyx + f8.zwxy + fB.wzyx
-
-  const Vec4 row1 = shuffle<Shuf4::zwxy>(f0)
-                  + shuffle<Shuf4::wzyx>(f3)
-                  + shuffle<Shuf4::zwxy>(f4);
-
-  const Vec4 row2 = shuffle<Shuf4::wzyx>(f1)
-                  + shuffle<Shuf4::zwxy>(f6)
-                  + shuffle<Shuf4::wzyx>(f9);
-
-  const Vec4 row3 = shuffle<Shuf4::zwxy>(f2)
-                  + shuffle<Shuf4::wzyx>(f7)
-                  + shuffle<Shuf4::zwxy>(fA);
-
-  const Vec4 row4 = shuffle<Shuf4::wzyx>(f5)
-                  + shuffle<Shuf4::zwxy>(f8)
-                  + shuffle<Shuf4::wzyx>(fB);
-
-  return Mat4{ row1, row2, row3, row4 };
-
-  //  LAPLACE_FACTORS
-  //
-  //  // determinants
-  //  const Vec4 da0 = lhs0 - rhs0;               // s0 s1 c0 c1
-  //  const Vec4 da1 = lhs1 - rhs1;               // s2 s3 c2 c3
-  //  // careful: da2 goes 5-4-5-4
-  //  const Vec4 da2 = lhs2 - rhs2;               // s5 s4 c5 c4
-  //
-  //  const Vec4 dd0 = shuffle<Shuf4::zzxx>(da0); // c0 c0 s0 s0
-  //  const Vec4 dd1 = shuffle<Shuf4::wwyy>(da0); // c1 c1 s1 s1
-  //  const Vec4 dd2 = shuffle<Shuf4::zzxx>(da1); // c2 c2 s2 s2
-  //  const Vec4 dd3 = shuffle<Shuf4::wwyy>(da1); // c3 c3 s3 s3
-  //  const Vec4 dd4 = shuffle<Shuf4::wwyy>(da2); // c4 c4 s4 s4
-  //  const Vec4 dd5 = shuffle<Shuf4::zzxx>(da2); // c5 c5 s5 s5
-  //
-  //  // flip alternatingly
-  //  const Vec4 mask{bits_to_float(_mm_set_epi32(f32_sign_mask, 0, f32_sign_mask, 0))};
-  //
-  //  const Vec4 d0 = dd0 ^ mask;                 // c0 -c0 s0 -s0
-  //  const Vec4 d1 = dd1 ^ mask;                 // c1 -c1 s1 -s1
-  //  const Vec4 d2 = dd2 ^ mask;                 // c2 -c2 s2 -s2
-  //  const Vec4 d3 = dd3 ^ mask;                 // c3 -c3 s3 -s3
-  //  const Vec4 d4 = dd4 ^ mask;                 // c4 -c4 s4 -s4
-  //  const Vec4 d5 = dd5 ^ mask;                 // c5 -c5 s5 -s5
-  //
-  //  // TODO with the third set of permutations this looks bad, check if there's a better way
-  //  const Vec4 r0a = v1p2 * d5; // a11*c5, -a01*c5, a31*s5, -a21*s5
-  //  const Vec4 r0b = v2p2 * d4; // a12*c4, -a02*c4, a32*s4, -a22*s4
-  //  const Vec4 r0c = v3p2 * d3; // a13*c3, -a03*c3, a33*s3, -a23*s3
-  //
-  //  const Vec4 row0 = r0a - r0b + r0c;
-  //
-  //  const Vec4 r1a = v0p2 * d5; // a10*c5 -a00*c5 a30*s5 -a20*s5
-  //  const Vec4 r1b = v2p2 * d2; // a12*c2 -a02*c2 a32*s2 -a22*s2
-  //  const Vec4 r1c = v3p2 * d1; // a13*c1 -a03*c1 a33*s1 -a23*s1
-  //
-  //  const Vec4 row1 = r1b - r1a - r1c;
-  //
-  //  const Vec4 r2a = v0p2 * d4; // a10*c4 -a00*c4 a30*s4 -a20*s4
-  //  const Vec4 r2b = v1p2 * d2; // a11*c2 -a01*c2 a31*s2 -a21*s2
-  //  const Vec4 r2c = v3p2 * d0; // a13*c0 -a03*c0 a33*s0 -a23*s0
-  //
-  //  const Vec4 row2 = r2a - r2b + r2c;
-  //
-  //  const Vec4 r3a = v0p2 * d3; // a10*c3 -a00*c3 a30*s3 -a20*s3
-  //  const Vec4 r3b = v1p2 * d1; // a11*c1 -a01*c1 a31*s1 -a21*s1
-  //  const Vec4 r3c = v2p2 * d0; // a12*c0 -a02*c0 a32*s0 -a22*s0
-  //
-  //  const Vec4 row3 = r3b - r3a - r3c;
-  //
-  //  return Mat4{ row0, row1, row2, row3 };
+  return Mat4{ row0, row1, row2, row3 };
 }
 
 FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::inverse_transposed() const
 {
-#ifdef FSVF_NO_RECIPROCAL_MATH
   return adj_transposed().scale_by_inv(determinant());
-#else
-  return adj_transposed().scale_by(1.f / determinant());
-#endif
 }
 
 FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::inverse() const
@@ -477,96 +454,62 @@ FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::inverse() const
   // funnily enough, MSVC will FSVF_FORCEINLINE the call to `adj()` below, but
   // won't FSVF_FORCEINLINE the call to `inverse_transposed()` in:
   // return inverse_transposed().transpose();
-#ifdef FSVF_NO_RECIPROCAL_MATH
   return adj().scale_by_inv(determinant());
-#else
-  return adj().scale_by(1.f / determinant());
-#endif
 }
 
-FSVF_FORCEINLINE std::optional<Mat4> FSVF_VECCALL Mat4::inverse_safe() const
+FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::adj() const
 {
-  const float det = determinant();
-
-  if (det == 0.f) return {};
-
-#ifdef FSVF_NO_RECIPROCAL_MATH
-  return std::optional<Mat4>(adj().scale_by_inv(det));
-#else
-  const float inv_det = 1.f / det;
-  return std::make_optional(adj().scale_by(inv_det));
-#endif
-}
-
-FSVF_FORCEINLINE std::optional<Mat4> FSVF_VECCALL Mat4::inverse_transposed_safe() const
-{
-  const float det = determinant();
-
-  if (det == 0.f) return {};
-
-#ifdef FSVF_NO_RECIPROCAL_MATH
-  return std::optional<Mat4>(adj_transposed().scale_by_inv(det));
-#else
-  const float inv_det = 1.f / det;
-  return std::optional<Mat4>(adj_transposed().scale_by(inv_det));
-#endif
+  return adj_transposed().transpose();
 }
 
 template<std::derived_from<LVec3> T>
 FSVF_FORCEINLINE T FSVF_VECCALL Mat4::transform_3x3(T v) const
 {
-  // TODO check best approach (transpose-mul, using FMA and combinations of these)
   const auto vx = shuffle<Shuf3::xxx>(v);
   const auto vy = shuffle<Shuf3::yyy>(v);
   const auto vz = shuffle<Shuf3::zzz>(v);
 
   const auto c0 = cols[0] * vx;
-  const auto c1 = cols[1] * vy;
-  const auto c2 = cols[2] * vz;
+  const auto c01 = fmadd(cols[1], vy, c0);
+  const auto c012 = fmadd(cols[2], vz, c01);
 
-  return T{ c0 + c1 + c2 };
+  return T{ c012 };
 }
 
 template<std::derived_from<LVec3> T>
 FSVF_FORCEINLINE T FSVF_VECCALL Mat4::transform_affine(T v) const
 {
-  // TODO check best
   const auto vx = shuffle<Shuf3::xxx>(v);
   const auto vy = shuffle<Shuf3::yyy>(v);
   const auto vz = shuffle<Shuf3::zzz>(v);
 
-  const auto c0 = cols[0] * vx;
-  const auto c1 = cols[1] * vy;
-  /* TODO try FMA? */
-  const auto c2  = cols[2] * vz;
-  const auto res = (c0 + c1) + (c2 + LVec3{ cols[3] });
-  /******************/
+  const auto c0 = fmadd(cols[0], vx, LVec3{ cols[3] });
+  const auto c01 = fmadd(cols[1], vy, c0);
+  const auto c012 = fmadd(cols[2], vz, c01);
 
-  return res;
+  return c012;
 }
 
 template<std::derived_from<LVec3> T>
 FSVF_FORCEINLINE T FSVF_VECCALL Mat4::transform_projective(T v) const
 {
-  // TODO check best
-  const Vec4 vx = shuffle<Shuf4::xxxx>(v);
-  const Vec4 vy = shuffle<Shuf4::yyyy>(v);
-  const Vec4 vz = shuffle<Shuf4::zzzz>(v);
+  const auto vx = shuffle<Shuf4::xxxx>(v);
+  const auto vy = shuffle<Shuf4::yyyy>(v);
+  const auto vz = shuffle<Shuf4::zzzz>(v);
 
-  const Vec4 c0  = cols[0] * vx;
-  const Vec4 c1  = cols[1] * vy;
-  const Vec4 c2  = cols[2] * vz;
-  const Vec4 res = (c0 + c1) + (c2 + cols[3]);
-  /******************/
-  const Vec4 scale = shuffle<Shuf4::wwww>(res);
+  const auto c0 = fmadd(cols[0], vx, LVec3{ cols[3] });
+  const auto c01 = fmadd(cols[1], vy, c0);
+  const auto c012 = fmadd(cols[2], vz, c01);
 
-  // TODO conditional vs unconditional division?
-  // TODO optimize constant
-  if (scale == Vec4(1.f)) return LVec3{ res };
+  auto scale = shuffle<Shuf4::wwww>(c012);
 
-  return LVec3{ res / scale };
+  // avoid dividing by zero if the scale is zero
+  scale = blend_with_vector_mask(scale, Vec4{1.f}, BitMasks::cmp_equal_f32(scale, Vec4::zeroes()));
+
+  return T{ c012 / scale };
 }
 
+// TODO see if it can be optimized
 FSVF_FORCEINLINE Mat4 FSVF_VECCALL Mat4::mul_transp(Mat4 m) const
 {
   Vec4 p0 = cols[0] * m.cols[0];

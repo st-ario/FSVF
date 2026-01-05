@@ -9,7 +9,7 @@ project(FSVF)
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "" FORCE)
 
 # default build type on single-config generators
-set(CMAKE_BUILD_TYPE "Release")
+set(CMAKE_BUILD_TYPE "Release" CACHE STRING "")
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,6 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # optimized globally
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/system_checks.cmake")
-set(CMAKE_CXX_FLAGS "${ARCHITECTURE_FLAGS}")
 
 # useful for clangd and other tools
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
@@ -31,38 +30,59 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # compilation flags I expect to use on almost all targets (not set globally,
 # in order to make per-target configurations easier)
 if(ON_GCC)
-    set(DEFAULT_COMPILATION_FLAGS -fdiagnostics-show-template-tree
-        -fno-elide-type #-msse4.2
-        -march=native
-        -Wno-unknown-pragmas
+    set(DEFAULT_COMPILATION_FLAGS
+        "-fdiagnostics-show-template-tree"
+        #"-fno-strict-aliasing"
+        "-fno-elide-type"
+        "-march=native"
+        "-Wno-unknown-pragmas"
+        "-Wno-ignored-attributes"
+        "-Wno-template-body"
+        "-mno-avx512f"
+    # generate assembly
+        #"-save-temps=obj"
+        #"-masm=intel"
+        #"-fverbose-asm"
+    )
         # https://gcc.gnu.org/wiki/FloatingPointMath
         # https://kristerw.github.io/2021/10/19/fast-math/
-        )
-    set(DEFAULT_RELEASE_COMPILATION_FLAGS -O3 -DNDEBUG -W)
-    set(DEFAULT_DEBUG_COMPILATION_FLAGS -ggdb -Og -Werror -Wextra -Wall
-        -Wpedantic -Wconversion -Warith-conversion -Wwrite-strings
-        -Warray-bounds=2 -Wcast-align=strict -Wcast-qual -Wdouble-promotion
-        -Wduplicated-branches -Wduplicated-cond -Wformat-overflow=2
-        -Wnull-dereference -Wimplicit-fallthrough=5 -Wshift-negative-value
-        -Wswitch-default -Wswitch-enum -Wuninitialized -Wfloat-equal
-        -Wfloat-conversion -Wshadow -Wlogical-op -Wvla -Wextra-semi
-        -Wsuggest-override)
+    set(DEFAULT_RELEASE_COMPILATION_FLAGS "-O3" "-DNDEBUG" "-W")
+    set(DEFAULT_DEBUG_COMPILATION_FLAGS
+       "-ggdb" "-Og" "-Werror" "-Wextra" "-Wall"
+       "-Wpedantic" "-Wconversion" "-Warith-conversion" "-Wwrite-strings"
+       "-Warray-bounds=2" "-Wcast-align=strict" "-Wcast-qual" "-Wdouble-promotion"
+       "-Wduplicated-branches" "-Wduplicated-cond" "-Wformat-overflow=2"
+       "-Wnull-dereference" "-Wimplicit-fallthrough=5" "-Wshift-negative-value"
+       "-Wswitch-default" "-Wswitch-enum" "-Wuninitialized" "-Wfloat-equal"
+       "-Wfloat-conversion" "-Wshadow" "-Wlogical-op" "-Wvla" "-Wextra-semi"
+       "-Wsuggest-override"
+    )
 elseif(ON_CLANG)
-    set(DEFAULT_COMPILATION_FLAGS -fdiagnostics-show-template-tree
-        -fno-elide-type #-msse4.2
-        -march=native
+    set(DEFAULT_COMPILATION_FLAGS
+        "-fdiagnostics-show-template-tree"
+        #"-fno-strict-aliasing"
+        "-fno-elide-type"
+        "-march=native"
+        #"-ffp-model=precise"
         #-ffp-model=fast
+        "-ffp-contract=off"
+        "-mno-avx512f"
+    # generate assembly
+        #"-save-temps"
+        #"-dA"
+        #"-mllvm"
+        #"--x86-asm-syntax=intel"
+    )
         #-fdenormal-fp-math=positive-zero
-        -ffp-model=precise -ffp-contract=off
         # https://clang.llvm.org/docs/UsersManual.html#controlling-floating-point-behavior
-        )
-    set(DEFAULT_RELEASE_COMPILATION_FLAGS -O3 -DNDEBUG -W)
-    set(DEFAULT_DEBUG_COMPILATION_FLAGS -g -O0 -Werror -Wextra -Wall -Wpedantic
-        -Wconversion -Wwrite-strings -Warray-bounds -Wcast-align -Wcast-qual
-        -Wdouble-promotion -Wnull-dereference -Wimplicit-fallthrough
-        -Wshift-negative-value -Wswitch-default -Wswitch-enum -Wuninitialized
-        -Wfloat-equal -Wfloat-conversion -Wshadow -Wvla -Wextra-semi
-        -Wsuggest-override)
+    set(DEFAULT_RELEASE_COMPILATION_FLAGS "-O3" "-DNDEBUG" "-W")
+    set(DEFAULT_DEBUG_COMPILATION_FLAGS
+       "-g" "-O0" "-Werror" "-Wextra" "-Wall" "-Wpedantic"
+       "-Wconversion" "-Wwrite-strings" "-Warray-bounds" "-Wcast-align" "-Wcast-qual"
+       "-Wdouble-promotion" "-Wnull-dereference" "-Wimplicit-fallthrough"
+       "-Wshift-negative-value" "-Wswitch-default" "-Wswitch-enum" "-Wuninitialized"
+       "-Wfloat-equal" "-Wfloat-conversion" "-Wshadow" "-Wvla" "-Wextra-semi"
+       "-Wsuggest-override")
 elseif(ON_WINDOWS)
     # enable standard C++ exception handling
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/EHsc>)

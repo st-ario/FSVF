@@ -89,6 +89,7 @@ public:
   }
 
   FSVF_FORCEINLINE
+  // TODO GCC optimizes bit_cast and memcpy inconsistently
   stdVec4 components() const { return std::bit_cast<stdVec4, __m128>(m_sse); }
 
   //private:

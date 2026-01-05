@@ -67,9 +67,6 @@ public:
   LMat3 FSVF_VECCALL adj_transposed() const;
   LMat3 FSVF_VECCALL inverse_transposed() const;
 
-  // if the determinant is 0, returns the inverse transposed of `*this`, otherwise a `nullopt`
-  std::optional<LMat3> FSVF_VECCALL inverse_transposed_safe() const;
-
   // returns the adjunct matrix of `*this`
   // NOTE that `adj_transposed()` is faster than `adj()`;
   // avoid doing things like `adj().transpose()`
@@ -79,10 +76,6 @@ public:
   // NOTE that `inverse_transposed()` is faster than `inverse()`;
   // avoid doing things like `inverse().transpose()`
   LMat3 FSVF_VECCALL inverse() const;
-
-  // returns the inverse matrix of `*this`, if the determinant is !=0, or a `nullopt` otherwise
-  // NOTE that `inverse_transposed_safe()` is faster than `inverse_transposed()`;
-  std::optional<LMat3> FSVF_VECCALL inverse_safe() const;
 
   FSVF_FORCEINLINE
   float FSVF_VECCALL determinant() const { return Mat4::determinant_3x3(); }

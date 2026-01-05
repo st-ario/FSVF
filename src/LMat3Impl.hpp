@@ -52,38 +52,4 @@ inline LMat3 FSVF_VECCALL LMat3::inverse_transposed() const
   return unsafe_construct<true>(adj_transposed().scale_by(inv_det));
 }
 
-inline std::optional<LMat3> FSVF_VECCALL LMat3::inverse_safe() const
-{
-  const float det = determinant();
-
-  if (det == 0.f) return {};
-
-  const float inv_det = 1.f / det;
-
-  auto res = adj();
-
-  res.cols[0] *= inv_det;
-  res.cols[1] *= inv_det;
-  res.cols[2] *= inv_det;
-
-  return res;
-}
-
-inline std::optional<LMat3> FSVF_VECCALL LMat3::inverse_transposed_safe() const
-{
-  const float det = determinant();
-
-  if (det == 0.f) return {};
-
-  const float inv_det = 1.f / det;
-
-  auto res = adj_transposed();
-
-  res.cols[0] *= inv_det;
-  res.cols[1] *= inv_det;
-  res.cols[2] *= inv_det;
-
-  return res;
-}
-
 }    // namespace FSVF

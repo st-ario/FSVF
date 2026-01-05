@@ -8,10 +8,11 @@
 namespace FSVF
 {
 template<FastVector T1, FastVector T2>
-FSVF_FORCEINLINE Vec4 FSVF_VECCALL and_not(T1 v, T2 w)
+FSVF_FORCEINLINE T1 FSVF_VECCALL and_not(T1 v, T2 w)
 {
   // we want v AND (NOT w), so the arguments are flipped in the intrinsic call
-  return _mm_andnot_ps(m_sse(w), m_sse(v));
+  return
+  FSVF_RAW_(T1, _mm_andnot_ps(m_sse(w), m_sse(v)));
 }
 
 namespace Internals
@@ -53,6 +54,17 @@ FSVF_FORCEINLINE auto FSVF_VECCALL blend_with_mask(T1 v, T2 w)
   return FSVF_RAW_(Res, blended);
 }
 
+// TODO rename?
+// TODO invert order of arguments?
+template<FastVector T1, FastVector T2, FastVector T3>
+FSVF_FORCEINLINE auto FSVF_VECCALL blend_with_vector_mask(T1 v, T2 w, T3 mask)
+  -> LargestDimensionType<T1, T2>
+{
+  using Res = LargestDimensionType<T1, T2>;
+  const __m128 blended = _mm_blendv_ps(m_sse(v), m_sse(w), m_sse(mask));
+  return FSVF_RAW_(Res, blended);
+}
+
 namespace BitMasks
 {
 template<FastVector T1, FastVector T2>
@@ -86,6 +98,12 @@ FSVF_FORCEINLINE Vec4 FSVF_VECCALL cmp_equal_bitwise(T1 v, T2 w)
   );
 }
 
+template<FastVector T1, FastVector T2>
+FSVF_FORCEINLINE Vec4 FSVF_VECCALL cmp_not_equal_bitwise(T1 v, T2 w)
+{
+  return ~cmp_equal_bitwise(v, w);
+}
+
 FSVF_FORCEINLINE bool all_ones_bitwise(Vec4 v)
 {
   const auto s    = float_to_bits(m_sse(v));
@@ -113,7 +131,7 @@ FSVF_FORCEINLINE auto FSVF_VECCALL shuffle(T v) -> LargestDimensionType<T, Vec4>
 }
 
 template<Shuf3 SHUFFLE, FastVector T>
-FSVF_FORCEINLINE T FSVF_VECCALL shuffle(T v)
+FSVF_FORCEINLINE auto FSVF_VECCALL shuffle(T v) -> T
 {
   return FSVF_RAW_(
     T,
@@ -121,20 +139,40 @@ FSVF_FORCEINLINE T FSVF_VECCALL shuffle(T v)
   );
 }
 
+template<Shuf4 SHUFFLE, FastVector T1, FastVector T2>
+FSVF_FORCEINLINE auto FSVF_VECCALL shuffle_blend(T1 v, T2 w) -> LargestDimensionType<T1, T2>
+{
+  using Res = LargestDimensionType<T1, T2>;
+  return FSVF_RAW_(
+    Res,
+    _mm_shuffle_ps(m_sse(v), m_sse(w), std::to_underlying(SHUFFLE))
+  );
+}
+
+template<Shuf3 SHUFFLE, FastVector T1, FastVector T2>
+FSVF_FORCEINLINE auto FSVF_VECCALL shuffle_blend(T1 v, T2 w) -> LargestDimensionType<T1, T2>
+{
+  using Res = LargestDimensionType<T1, T2>;
+  return FSVF_RAW_(
+    Res,
+    _mm_shuffle_ps(m_sse(v), m_sse(w), std::to_underlying(SHUFFLE))
+  );
+}
+
 template<uint8_t VectorDimensions>
-  requires(VectorDimensions == 3 || VectorDimensions == 4)
+  //requires(VectorDimensions == 3 || VectorDimensions == 4)
 FSVF_FORCEINLINE bool FSVF_VECCALL all(Vec4 bitmask)
 {
   if constexpr (VectorDimensions == 3)
   {
-    bitmask |= Vec4{ 0.f, 0.f, 0.f, bits_to_float(0xFFFF'FFFF) };
+    bitmask |= Vec4{ 0.f, 0.f, 0.f, bits_to_float(0xFFFF'FFFFu) };
   }
 
   return BitMasks::all_ones_bitwise(bitmask);
 }
 
 template<uint8_t VectorDimensions>
-  requires(VectorDimensions == 3 || VectorDimensions == 4)
+  //requires(VectorDimensions == 3 || VectorDimensions == 4)
 FSVF_FORCEINLINE bool FSVF_VECCALL none(Vec4 bitmask)
 {
   if constexpr (VectorDimensions == 3) { bitmask = LVec3(bitmask); }
@@ -148,13 +186,20 @@ FSVF_FORCEINLINE bool FSVF_VECCALL any(Vec4 bitmask)
   return !none<VectorDimensions>(bitmask);
 }
 
+template bool FSVF_VECCALL all<3>(Vec4);
+template bool FSVF_VECCALL all<4>(Vec4);
+template bool FSVF_VECCALL none<3>(Vec4);
+template bool FSVF_VECCALL none<4>(Vec4);
+template bool FSVF_VECCALL any<3>(Vec4);
+template bool FSVF_VECCALL any<4>(Vec4);
+
 namespace Internals
 {
 template<typename Fn>
 concept Cumulable = std::is_invocable_r_v<__m128, Fn, __m128, __m128>;
 
-// callable that can be accumulated // TODO document better
-// TODO add associativity requirement (unlike std::reduce(), commutativity is not required)
+// For v = (x y z w)
+// Returns a 4-vector whose first component is f(f(x,y), f(z,w))
 template<Cumulable Fn>
 __m128 FSVF_FORCEINLINE FSVF_VECCALL reduce0(Fn f, __m128 v)
 {
@@ -165,26 +210,92 @@ __m128 FSVF_FORCEINLINE FSVF_VECCALL reduce0(Fn f, __m128 v)
   return f(couple, partial);    // f(fxy fzw) f(fyy fww) f(fzw w) f(fww w)
 }
 
-// TODO document
+// Reduces the four arguments horizontally.
+// For vN = (xN yN zN wN), each component of the resulting vector will be
+// f(f(xN,zN), f(zN,wN))
 template<Cumulable Fn>
 __m128 FSVF_FORCEINLINE FSVF_VECCALL
   reduceAll(Fn f, __m128 v0, __m128 v1, __m128 v2, __m128 v3)
 {
   // see Intel(R) 64 and IA-32 Architectures Optimization Reference Manual, 7.5.1.4
-  const __m128 t0 = _mm_movelh_ps(v0, v1);
-  const __m128 t1 = _mm_movehl_ps(v0, v1);
-  const __m128 t2 = _mm_movelh_ps(v2, v3);
-  const __m128 t3 = _mm_movehl_ps(v2, v3);
 
-  const __m128 a0 = f(t0, t1);
-  const __m128 a1 = f(t2, t3);
+  // v0 = a b c d
+  // v1 = x y z w
+  // v2 = i j k l
+  // v3 = m n o p
+  const __m128 t0 = _mm_movelh_ps(v0, v1); // a b x y
+  const __m128 t1 = _mm_movehl_ps(v1, v0); // c d z w
+  const __m128 t2 = _mm_movelh_ps(v2, v3); // i j m n
+  const __m128 t3 = _mm_movehl_ps(v3, v2); // k l o p
 
-  const __m128 s0 = _mm_shuffle_ps(a0, a1, std::to_underlying(Shuf4::xzxz));
-  const __m128 s1 = _mm_shuffle_ps(a0, a1, std::to_underlying(Shuf4::ywyw));
+  const __m128 a0 = f(t0, t1); // fac fbd fxz fyw
+  const __m128 a1 = f(t2, t3); // fik fjl fmo fnp
 
-  return f(s0, s1);
+  const __m128 s0 = _mm_shuffle_ps(a0, a1, std::to_underlying(Shuf4::xzxz)); // fac fxz fik fmo
+  const __m128 s1 = _mm_shuffle_ps(a0, a1, std::to_underlying(Shuf4::ywyw)); // fbd fyw fjo fnp
+
+  return f(s0, s1); // f(fac fbd) f(fxz fyw) f(fik fjo) f(fmo fnp)
 }
 }    // namespace Internals
+
+// TODO add tests
+
+template<FastVector T1, FastVector T2>
+FSVF_FORCEINLINE auto FSVF_VECCALL addsub(T1 v1, T2 v2) -> LargestDimensionType<T1, T2>
+{
+  using Res = LargestDimensionType<T1, T2>;
+  return FSVF_RAW_(Res, _mm_subadd_ps(m_sse(v1), m_sse(v2)));
+}
+
+template<FastVector T1, FastVector T2>
+FSVF_FORCEINLINE auto FSVF_VECCALL subadd(T1 v1, T2 v2) -> LargestDimensionType<T1, T2>
+{
+  using Res = LargestDimensionType<T1, T2>;
+  return FSVF_RAW_(Res, _mm_addsub_ps(m_sse(v1), m_sse(v2)));
+}
+
+template<FastVector T1, FastVector T2, FastVector T3>
+FSVF_FORCEINLINE auto FSVF_VECCALL fmadd(T1 v1, T2 v2, T3 v3) -> LargestDimensionType<SmallestDimensionType<T1, T2>, T3>
+{
+  using Res = LargestDimensionType<SmallestDimensionType<T1, T2>, T3>;
+  return FSVF_RAW_(Res, _mm_fmadd_ps(m_sse(v1), m_sse(v2), m_sse(v3)));
+}
+
+template<FastVector T1, FastVector T2, FastVector T3>
+FSVF_FORCEINLINE auto FSVF_VECCALL fmsub(T1 v1, T2 v2, T3 v3) -> LargestDimensionType<SmallestDimensionType<T1, T2>, T3>
+{
+  using Res = LargestDimensionType<SmallestDimensionType<T1, T2>, T3>;
+  return FSVF_RAW_(Res, _mm_fmsub_ps(m_sse(v1), m_sse(v2), m_sse(v3)));
+}
+
+template<FastVector T1, FastVector T2, FastVector T3>
+FSVF_FORCEINLINE auto FSVF_VECCALL fmaddsub(T1 v1, T2 v2, T3 v3) -> LargestDimensionType<SmallestDimensionType<T1, T2>, T3>
+{
+  using Res = LargestDimensionType<SmallestDimensionType<T1, T2>, T3>;
+  return FSVF_RAW_(Res, _mm_fmsubadd_ps(m_sse(v1), m_sse(v2), m_sse(v3)));
+}
+
+// TODO add test
+template<FastVector T1, FastVector T2, FastVector T3>
+FSVF_FORCEINLINE auto FSVF_VECCALL fmsubadd(T1 v1, T2 v2, T3 v3) -> LargestDimensionType<SmallestDimensionType<T1, T2>, T3>
+{
+  using Res = LargestDimensionType<SmallestDimensionType<T1, T2>, T3>;
+  return FSVF_RAW_(Res, _mm_fmaddsub_ps(m_sse(v1), m_sse(v2), m_sse(v3)));
+}
+
+template<FastVector T1, FastVector T2, FastVector T3>
+FSVF_FORCEINLINE auto FSVF_VECCALL fnmadd(T1 v1, T2 v2, T3 v3) -> LargestDimensionType<SmallestDimensionType<T1, T2>, T3>
+{
+  using Res = LargestDimensionType<SmallestDimensionType<T1, T2>, T3>;
+  return FSVF_RAW_(Res, _mm_fnmadd_ps(m_sse(v1), m_sse(v2), m_sse(v3)));
+}
+
+template<FastVector T1, FastVector T2, FastVector T3>
+FSVF_FORCEINLINE auto FSVF_VECCALL fnmsub(T1 v1, T2 v2, T3 v3) -> LargestDimensionType<SmallestDimensionType<T1, T2>, T3>
+{
+  using Res = LargestDimensionType<SmallestDimensionType<T1, T2>, T3>;
+  return FSVF_RAW_(Res, _mm_fnmsub_ps(m_sse(v1), m_sse(v2), m_sse(v3)));
+}
 
 template<FastVector T>
 FSVF_FORCEINLINE float FSVF_VECCALL sum(T v)
@@ -207,6 +318,14 @@ FSVF_FORCEINLINE float FSVF_VECCALL prod(T v)
   return _mm_cvtss_f32(prods);
 }
 
+// TODO test
+template<FastVector T1, FastVector T2, FastVector T3, FastVector T4>
+FSVF_FORCEINLINE Vec4 FSVF_VECCALL parallel_sum(T1 v1, T2 v2, T3 v3, T4 v4)
+{
+  auto sums = Internals::reduceAll(INTR_WRAP(_mm_add_ps), m_sse(v1), m_sse(v2), m_sse(v3), m_sse(v4));
+  return Vec4{sums};
+}
+
 template<FastVector T1, FastVector T2>
 FSVF_FORCEINLINE float FSVF_VECCALL dot(T1 v, T2 w)
 {
@@ -219,12 +338,20 @@ FSVF_FORCEINLINE LVec3 FSVF_VECCALL cross(T1 v, T2 w)
 {
   // v = x y z n
   // w = a b c m
-  auto vp = shuffle<Shuf3::zxy>(v);    // z x y n
-  auto wp = shuffle<Shuf3::zxy>(w);    // c a b m
-  auto m1 = vp * w;                    // az bx cy mn
-  auto m2 = v * wp;                    // cx ay bz mn
-  auto s  = m1 - m2;                   // az-cx bx-ay cy-bz 0
+  const auto wp = shuffle<Shuf3::zxy>(w);    // c a b m
+  const auto vp = shuffle<Shuf3::zxy>(v);    // z x y n
+  const auto m1 = v * wp;                    // cx ay bz mn
+
+  auto s = fmsub(w, vp, m1);           // az-cx bx-ay cy-bz 0
+
+#ifdef FSVF_EXTRA_PRECISION_CROSS
+  auto error = fnmadd(v, wp, m1);
+  s += error;
+#endif
+
   auto sh = shuffle<Shuf3::zxy>(s);    // cy-bz az-cx bx-ay 0
+
+  //TODO check that RAW preserves the invariant
   return FSVF_RAW_(LVec3, m_sse(sh));
 }
 
@@ -244,20 +371,15 @@ FSVF_FORCEINLINE float FSVF_VECCALL len_squared(T v)
 
 template<FastVector T>
 FSVF_FORCEINLINE auto FSVF_VECCALL sqrt(T v)
-//template<FastVector T> FSVF_FORCEINLINE T FSVF_VECCALL sqrt(T v)
 {
   return FSVF_RAW_(T, _mm_sqrt_ps(m_sse(v)));
 }
 
 template<FastVector T>
 FSVF_FORCEINLINE auto FSVF_VECCALL rsqrt(T v)
-//template<FastVector T> FSVF_FORCEINLINE T FSVF_VECCALL rsqrt(T v)
 {
-#ifdef FSVF_FLOAT_DENORMAL_MATH
-  Vec4 res = 1.0f / FSVF_RAW_(Vec4, _mm_sqrt_ps(m_sse(v)));
-#else
   Vec4 res = FSVF_RAW_(Vec4, _mm_rsqrt_ps(m_sse(v)));
-#endif
+
   // for types deriving from LVec3
   // the constructor will mask out possible junk coming from the last component
   return T{ res };
@@ -273,8 +395,16 @@ float FSVF_VECCALL len(T v)
   //auto maxVal = abs(Vec4{v});
   //maxVal = merge_max(maxVal, shuffle<Shuf4::wxyz>(maxVal));
   //maxVal = merge_max(maxVal, shuffle<Shuf4::zwxy>(maxVal));
-  const Vec4 maxVal = max_component_value<T>(abs(v));
 
+  //Vec4 maxVal = max_component_value(Vec4{abs(v)});
+  Vec4 maxVal = max_component_value(abs(v));
+
+  // avoid dividing by zero if the vector is zero
+  // TODO early return? Benchmark
+  maxVal = blend_with_vector_mask(maxVal, Vec4{1.f}, BitMasks::cmp_equal_f32(maxVal, Vec4::zeroes()));
+
+  // TODO temp
+    if (any_is_inf(maxVal)) return std::numeric_limits<float>::infinity();
   Vec4 scaled = v / maxVal;
 
   // handle the case where maxVal is zero
@@ -293,46 +423,11 @@ float FSVF_VECCALL len(T v)
 }
 
 template<FastVector T>
-T FSVF_VECCALL normalize_alt(T v)
-{
-  // see https://gamedev.net/forums/topic/628007-sse-vector-normalization/4965099/?page=2
-  // TODO adapt
-  __m128 av = m_sse(abs(v));
-  av = _mm_max_ps(av, _mm_shuffle_ps(av, av, std::to_underlying(Shuf4::wxyz)));
-  av = _mm_max_ps(av, _mm_shuffle_ps(av, av, std::to_underlying(Shuf4::zwxy)));
-
-  // Divide by the maximum absolute component. This is potentially a divide by zero.
-  __m128 normalized = _mm_div_ps(m_sse(v), av);
-
-  // Set to zero when the original length is zero.
-  __m128 zero = _mm_setzero_ps();
-  __m128 mask = _mm_cmpneq_ps(zero, av);
-  normalized  = _mm_and_ps(mask, normalized);
-
-  // (sqrLength, sqrLength, sqrLength, sqrLength)
-  __m128 sqrLength = _mm_dp_ps(normalized, normalized, 0xFF);
-
-  // (length, length, length, length)
-  __m128 length = _mm_sqrt_ps(sqrLength);
-
-  // Divide by the length to normalize. This is potentially a divide by zero.
-  normalized = _mm_div_ps(normalized, length);
-
-  // Set to zero when the original length is zero or infinity. In the latter case, this is considered to be an unexpected condition.
-  normalized = _mm_and_ps(mask, normalized);
-  return FSVF_RAW_(T, normalized);
-
-  // using rsqrt can result in return values w/ components > 1.0f in module
-  // TODO benchmark if it's better this way or saturating
-  //return T{v / len(v)};
-}
-
-template<FastVector T>
 T FSVF_VECCALL normalize(T v)
 {
   // TODO consider DPPS, benchmark, optimize 3D case
   // using that norm(v) = norm(v/abs(max)) to improve numerical stability
-  const Vec4 maxVal = max_component_value<T>(abs(v));
+  const Vec4 maxVal = max_component_value(Vec4{abs(v)});
 
   Vec4 scaled = v / maxVal;
 
@@ -342,7 +437,7 @@ T FSVF_VECCALL normalize(T v)
 
   Vec4 lenScaledSquared{ _mm_dp_ps(scaled, scaled, 0xFF) };
 
-#if defined(FSVF_RSQRT_NORMALIZE) || defined(FSVF_RCPPS)
+#if defined(FSVF_RSQRT_NORMALIZE)
   const Vec4 invLenScaled = rsqrt(lenScaledSquared);
   Vec4       res          = scaled * invLenScaled;
 #else
@@ -353,7 +448,8 @@ T FSVF_VECCALL normalize(T v)
   // handle the case lenScaled == 0
   res &= nonzeroMask;
 
-  return FSVF_RAW_(T, res);
+  //return FSVF_RAW_(T, res);
+  return T{res};
 }
 
 template<FastVector T1, FastVector T2>
@@ -509,59 +605,59 @@ inline uint8_t FSVF_VECCALL max_component_index(T v)
     return (arr[0] & (!arr[1] * 2)) | (~arr[0] & (!arr[2] + 1));
   }
 }
+// TODO floor, ceil
 
 template<FastVector T>
-FSVF_FORCEINLINE Vec4 FSVF_VECCALL min_component_value(T v)
+FSVF_FORCEINLINE T FSVF_VECCALL min_component_value(T v)
 {
-  // TODO optimize
-  Vec4 vm;
-  if constexpr (std::is_base_of_v<LVec3, T>) vm = shuffle<Shuf4::xyzz>(v);
-  else vm = v;
+  if constexpr (std::is_base_of_v<LVec3, T>)
+  {
+    v = merge_min(v, shuffle<Shuf3::yzx>(v));
+    return merge_min(v, shuffle<Shuf3::zxy>(v));
+  }
+  else
+  {
+    // do the first two merges separately
+    T vms0 = shuffle<Shuf4::zwxy>(v);
+    T vms1 = shuffle<Shuf4::wxyz>(v);
 
-  vm = merge_min(vm, shuffle<Shuf4::wxyz>(vm));
-  vm = merge_min(vm, shuffle<Shuf4::zwxy>(vm));
+    v = merge_min(v, shuffle<Shuf4::yzwx>(v));
+    vms0 = merge_min(vms0, vms1);
 
-  return vm;
+    return merge_min(v, vms0);
+  }
 }
 
 template<FastVector T>
-FSVF_FORCEINLINE Vec4 FSVF_VECCALL max_component_value(T v)
+FSVF_FORCEINLINE T FSVF_VECCALL max_component_value(T v)
 {
-  // TODO optimize
-  Vec4 vm;
-  if constexpr (std::is_base_of_v<LVec3, T>) vm = shuffle<Shuf4::xyzz>(v);
-  else vm = v;
+  if constexpr (std::is_base_of_v<LVec3, T>)
+  {
+    v = merge_max(v, shuffle<Shuf3::yzx>(v));
+    return merge_max(v, shuffle<Shuf3::zxy>(v));
+  }
+  else
+  {
+    T vms0 = shuffle<Shuf4::zwxy>(v);
+    T vms1 = shuffle<Shuf4::wxyz>(v);
 
-  vm = merge_max(vm, shuffle<Shuf4::wxyz>(vm));
-  vm = merge_max(vm, shuffle<Shuf4::zwxy>(vm));
+    v = merge_max(v, shuffle<Shuf4::yzwx>(v));
+    vms0 = merge_max(vms0, vms1);
 
-  return vm;
+    return merge_max(v, vms0);
+  }
 }
 
 template<FastVector T>
 FSVF_FORCEINLINE float FSVF_VECCALL min_component_value_f32(T v)
 {
-  // TODO optimize
-  __m128 vm;
-  if constexpr (std::is_base_of_v<LVec3, T>)
-    vm = m_sse(shuffle<Shuf4::xyzz>(v));
-  else vm = m_sse(v);
-
-  __m128 reduced = Internals::reduce0(INTR_WRAP(_mm_min_ps), vm);
-  return _mm_cvtss_f32(reduced);
+  return _mm_cvtss_f32(m_sse(min_component_value(v)));
 }
 
 template<FastVector T>
 FSVF_FORCEINLINE float FSVF_VECCALL max_component_value_f32(T v)
 {
-  // TODO optimize
-  __m128 vm;
-  if constexpr (std::is_base_of_v<LVec3, T>)
-    vm = m_sse(shuffle<Shuf4::xyzz>(v));
-  else vm = m_sse(v);
-
-  __m128 reduced = Internals::reduce0(INTR_WRAP(_mm_max_ps), vm);
-  return _mm_cvtss_f32(reduced);
+  return _mm_cvtss_f32(m_sse(max_component_value(v)));
 }
 
 template<FastVector T1, FastVector T2>
@@ -574,11 +670,16 @@ FSVF_FORCEINLINE T1 FSVF_VECCALL clamp(T1 v, T2 min, T2 max)
   auto max_filler = max_mask & max;
   auto min_filler = min_mask & min;
 
-  auto res  = and_not(v, change_mask);
-  res      |= max_filler;
-  res      |= min_filler;
+  auto res = blend_with_vector_mask(v, (max_filler | min_filler), change_mask);
 
-  return LargestDimensionType<T1, T2>{ res };
+  return res;
+}
+
+template<FastVector T>
+FSVF_FORCEINLINE T FSVF_VECCALL saturate(T v)
+{
+  // TODO optimize for 3D
+  return clamp<T, T>(v, T::zeroes(), T{1.f});
 }
 
 template<FastVector T>
@@ -746,4 +847,17 @@ FSVF_FORCEINLINE __m128 LVec3::precondition(__m128 sse)
   return blend_with_mask<0b1110>(Vec4::zeroes(), Vec4(sse));
 }
 
+// TODO move to float utils
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 mantissa            (FastVector auto x) { return x & Vec4{bits_to_float(f32_mantissa_mask)}; }
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 exponent            (FastVector auto x) { return x & Vec4{bits_to_float(f32_exponent_mask)}; }
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 signed_exponent     (FastVector auto x) { return x & Vec4{bits_to_float(f32_signed_exponent_mask)}; }
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 sign_bit            (FastVector auto x) { return x & Vec4{bits_to_float(f32_sign_mask)}; }
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 is_inf_or_nan       (FastVector auto x) { return BitMasks::cmp_equal_bitwise(exponent(x), Vec4{bits_to_float(f32_exponent_mask)}); }
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 is_finite           (FastVector auto x) { return ~is_inf_or_nan(x); }
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 is_inf              (FastVector auto x) { return is_inf_or_nan(x) & BitMasks::cmp_equal_bitwise(mantissa(x), Vec4::zeroes()); }
+FSVF_FORCEINLINE FSVF_VECCALL Vec4 is_nan              (FastVector auto x) { return is_inf_or_nan(x) & BitMasks::cmp_not_equal_bitwise(mantissa(x), Vec4::zeroes()); }
+FSVF_FORCEINLINE FSVF_VECCALL bool any_is_inf_or_nan   (FastVector auto x) { return any<4>(is_inf_or_nan(x)); }
+FSVF_FORCEINLINE FSVF_VECCALL bool any_is_finite       (FastVector auto x) { return any<4>(is_finite(x)); }
+FSVF_FORCEINLINE FSVF_VECCALL bool any_is_inf          (FastVector auto x) { return any<4>(is_inf(x)); }
+FSVF_FORCEINLINE FSVF_VECCALL bool any_is_nan          (FastVector auto x) { return any<4>(is_nan(x)); }
 }    // namespace FSVF

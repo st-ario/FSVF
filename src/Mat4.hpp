@@ -2,8 +2,6 @@
 
 #include "Vec4.hpp"
 
-#include <optional>
-
 namespace FSVF
 {
 
@@ -57,6 +55,7 @@ public:
   template<typename T>
     requires FastVector<T> && (!std::derived_from<T, LVec3>)
   T FSVF_VECCALL operator*(T v) const;
+  // TODO left vector multiplication?
 
   // (deleted) multiply with a 3D vector
   // deleted as potentially ambiguous, use `transform_3x3()`, `transform_affine()` or
@@ -102,7 +101,6 @@ public:
 
   // multiply all entries by x (equivalent to multiplying by diagonal matrix with entries x)
   Mat4 FSVF_VECCALL scale_by(float x) const;
-  Mat4 FSVF_VECCALL operator*(float x) const { return scale_by(x); }
 
   // component-wise multiply each column by v (equivalent to multiplying by diagonal matrix with entries v)
   Mat4 FSVF_VECCALL scale_by(Vec4 v) const;
@@ -120,21 +118,16 @@ public:
   // returns the adjunct matrix of `*this`
   // NOTE that `adj_transposed()` is faster than `adj()`;
   // avoid doing things like `adj().transpose()`
-  Mat4 FSVF_VECCALL adj() const { return adj_transposed().transpose(); }
+  Mat4 FSVF_VECCALL adj() const;
 
   // returns the inverse matrix of `*this`
   // NOTE that `inverse_transposed()` is faster than `inverse()`;
-  // avoid doing things like `inverse().transpose()`
+  // avoid doing `inverse().transpose()`
   Mat4 FSVF_VECCALL inverse() const;
 
-  // returns the inverse matrix of `*this`, if the determinant is !=0, or a `nullopt` otherwise
-  // NOTE that `inverse_transposed_safe()` is faster than `inverse_transposed()`;
-  std::optional<Mat4> FSVF_VECCALL inverse_safe() const;
-
-  // if the determinant is 0, returns the inverse transposed of `*this`, otherwise a `nullopt`
-  std::optional<Mat4> FSVF_VECCALL inverse_transposed_safe() const;
-
   float FSVF_VECCALL determinant() const;
+  // TODO remove
+  float FSVF_VECCALL determinant_stable() const;
 
   // returns the determinant of the (top-left) 3x3 submatrix of `*this`, ignoring whatever is
   // contained in the last row and column
@@ -144,7 +137,12 @@ public:
   std::array<Vec4, 4> cols;
 };
 
+Mat4 FSVF_VECCALL operator*(Mat4 m, float x);
+Mat4 FSVF_VECCALL operator*(float x, Mat4 m);
+
 Mat4 FSVF_VECCALL operator/(Mat4 m, float x);
 Mat4 FSVF_VECCALL operator/(float x, Mat4 m);
+
+// TODO *=, /=, ...
 
 }    // namespace FSVF
